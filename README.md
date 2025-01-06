@@ -41,7 +41,7 @@ This tool executes real swaps on Raydium with real funds:
 
 ### Option 1: Download Binary (Recommended)
 
-1. Go to the [Releases](https://github.com/your-repo/thorbench/releases) tab
+1. Go to the [Releases](https://github.com/thorlabsDev/thorbench/releases) tab
 2. Download for your platform:
   - `thorbench-linux-amd64` for Linux
   - `thorbench-windows-amd64.exe` for Windows
