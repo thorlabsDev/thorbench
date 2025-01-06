@@ -1,0 +1,16 @@
+{
+  "private_key": "",
+  "rpc_url": "http://rpc-de.thornode.io/",
+  "ws_url": "",
+  "send_rpc_url": "",
+  "rate_limit": 200,
+  "tx_count": 20,
+  "prio_fee": 1,
+  "node_retries": 0,
+  "input_mint": "So11111111111111111111111111111111111111112",
+  "output_mint": "4k3Dyjzvzp8eMZWUXbBCjEvwSkkk59S5iCNLY3QrkX6R",
+  "slippage": 100,
+  "amount": 0.01,
+  "compute_unit_limit": 30000,
+  "skip_warmup": false
+}
