@@ -1,6 +1,7 @@
 package internal
 
 import (
+	"fmt"
 	"math"
 	"strings"
 	"time"
@@ -132,24 +133,34 @@ func DisplayBlocks() {
 		return
 	}
 
-	var first uint64 = math.MaxUint64
-	var last uint64
+	var firstBlock uint64 = math.MaxUint64
+	var lastBlock uint64
 	for block := range TxBlocks {
-		if block < first {
-			first = block
+		if block < firstBlock {
+			firstBlock = block
 		}
-		if block > last {
-			last = block
+		if block > lastBlock {
+			lastBlock = block
 		}
 	}
 
 	printer := message.NewPrinter(language.English)
-	SimpleLogger.Printf("Distribution across %d blocks:", last-first+1)
+	totalBlocks := lastBlock - firstBlock + 1
+	SimpleLogger.Printf("Distribution across %d blocks:", totalBlocks)
 	SimpleLogger.Print("")
 
-	for block := first; block <= last; block++ {
-		count, ok := TxBlocks[block]
-		if !ok {
+	// Fixed width format string to ensure alignment
+	const formatStr = "Block %-12s : %5s %-4s | %5.1f%% | %s"
+
+	for block := firstBlock; block <= lastBlock; block++ {
+		count, exists := TxBlocks[block]
+		if !exists {
+			// Display empty blocks with 0 transactions
+			SimpleLogger.Printf(formatStr,
+				printer.Sprintf("%d", block),
+				"No", "txns",
+				0.0,
+				"")
 			continue
 		}
 
@@ -159,9 +170,9 @@ func DisplayBlocks() {
 		}
 		stars := int(math.Ceil(percentage))
 
-		SimpleLogger.Printf("Block %s : %3d txns | %5.1f%% | %s",
+		SimpleLogger.Printf(formatStr,
 			printer.Sprintf("%d", block),
-			count,
+			fmt.Sprintf("%d", count), "txns",
 			percentage,
 			strings.Repeat("*", stars),
 		)

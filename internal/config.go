@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/gagliardetto/solana-go"
@@ -22,10 +23,10 @@ type Config struct {
 	NodeRetries      uint    `json:"node_retries"`
 	InputMint        string  `json:"input_mint"`
 	OutputMint       string  `json:"output_mint"`
-	Slippage         float64 `json:"slippage"` // e.g. 1.0 => 1%
-	Amount           float64 `json:"amount"`   // tokens to swap
+	Slippage         float64 `json:"slippage"`
+	Amount           float64 `json:"amount"`
 	ComputeUnitLimit uint64  `json:"compute_unit_limit"`
-	SkipWarmup       bool    `json:"skip_warmup"` // NEW: option to skip warmup TX
+	SkipWarmup       bool    `json:"skip_warmup"`
 }
 
 func (c *Config) GetWsUrl() string {
@@ -42,23 +43,81 @@ func (c *Config) GetSendUrl() string {
 	return c.RpcUrl
 }
 
-func ReadConfig() *Config {
-	configTemplate := DEFAULT_CONFIG
-	data, err := os.ReadFile("config.json")
+func getExecutablePath() string {
+	ex, err := os.Executable()
 	if err != nil {
-		if os.IsNotExist(err) {
-			if err := WriteConfig(&configTemplate); err != nil {
-				SimpleLogger.Fatalf("error creating config file: %v", err)
-			}
-			SimpleLogger.Printf("\nExample config.json created. Please edit all required fields, then restart.\n")
-			os.Exit(1)
-		}
-		SimpleLogger.Fatalf("error opening config file: %v", err)
+		SimpleLogger.Printf("Warning: Could not determine executable path: %v", err)
+		return "."
 	}
+	dir := filepath.Dir(ex)
+	// SimpleLogger.Printf("Executable directory: %s", dir)
+	return dir
+}
+
+func findConfigFile() (string, error) {
+	execDir := getExecutablePath()
+
+	// Always try executable directory first
+	configPath := filepath.Join(execDir, "config.json")
+	// SimpleLogger.Printf("Checking for config at: %s", configPath)
+
+	if _, err := os.Stat(configPath); err == nil {
+		if data, err := os.ReadFile(configPath); err == nil && len(data) > 0 {
+			// SimpleLogger.Printf("Successfully read %d bytes from config in executable directory", len(data))
+			return configPath, nil
+		} else {
+			SimpleLogger.Printf("Warning: Found config in executable directory but couldn't read it: %v", err)
+		}
+	}
+
+	// If not found in executable directory, try current directory
+	cwd, err := os.Getwd()
+	if err != nil {
+		SimpleLogger.Printf("Warning: Could not determine current working directory: %v", err)
+		cwd = "."
+	}
+	// SimpleLogger.Printf("Current working directory: %s", cwd)
+
+	configPath = filepath.Join(cwd, "config.json")
+	// SimpleLogger.Printf("Checking for config at: %s", configPath)
+
+	if _, err := os.Stat(configPath); err == nil {
+		if data, err := os.ReadFile(configPath); err == nil && len(data) > 0 {
+			SimpleLogger.Printf("Successfully read %d bytes from config in current directory", len(data))
+			return configPath, nil
+		} else {
+			SimpleLogger.Printf("Warning: Found config in current directory but couldn't read it: %v", err)
+		}
+	}
+
+	return "", fmt.Errorf("config file not found")
+}
+
+func ReadConfig() *Config {
+	// SimpleLogger.Printf("Looking for config.json...")
+
+	configPath, err := findConfigFile()
+	if err != nil {
+		SimpleLogger.Printf("No existing config file found, creating template...")
+		configTemplate := DEFAULT_CONFIG
+		if err := WriteConfig(&configTemplate); err != nil {
+			SimpleLogger.Fatalf("Error creating config file: %v", err)
+		}
+		SimpleLogger.Printf("\nExample config.json created at: %s\nPlease edit all required fields, then restart.\n", configPath)
+		os.Exit(1)
+	}
+
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		SimpleLogger.Fatalf("Error reading config file at %s: %v", configPath, err)
+	}
+
+	// SimpleLogger.Printf("Read config file contents (%d bytes)", len(data))
+	// SimpleLogger.Printf("Config content preview: %s", string(data[:min(len(data), 100)]))
 
 	var cfg Config
 	if err := json.Unmarshal(data, &cfg); err != nil {
-		SimpleLogger.Fatalf("error parsing config file: %v", err)
+		SimpleLogger.Fatalf("Error parsing config JSON: %v\nContent: %s", err, string(data))
 	}
 
 	// Validate required fields
@@ -96,7 +155,32 @@ func WriteConfig(config *Config) error {
 	if err != nil {
 		return fmt.Errorf("error marshaling config: %w", err)
 	}
-	return os.WriteFile("config.json", data, 0644)
+
+	configPath := filepath.Join(getExecutablePath(), "config.json")
+	SimpleLogger.Printf("Writing config to: %s", configPath)
+
+	// Ensure directory exists
+	if err := os.MkdirAll(filepath.Dir(configPath), 0755); err != nil {
+		return fmt.Errorf("error creating config directory: %w", err)
+	}
+
+	return os.WriteFile(configPath, data, 0644)
+}
+
+// Helper function to mask private key in logs
+func maskPrivateKey(key string) string {
+	if len(key) <= 8 {
+		return "***"
+	}
+	return key[:4] + "..." + key[len(key)-4:]
+}
+
+// Helper function for min of two ints
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }
 
 func VerifyPrivateKey(base58key string) {

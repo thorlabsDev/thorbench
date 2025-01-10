@@ -4,18 +4,31 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
-	"golang.org/x/time/rate"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 	"time"
 
 	"github.com/fatih/color"
+	"golang.org/x/time/rate"
 
 	"thorbench/internal"
 )
 
 func main() {
+	// Get executable directory and change to it
+	ex, err := os.Executable()
+	if err != nil {
+		fmt.Printf("Error getting executable path: %v\n", err)
+		os.Exit(1)
+	}
+	execDir := filepath.Dir(ex)
+	if err := os.Chdir(execDir); err != nil {
+		fmt.Printf("Error changing to executable directory: %v\n", err)
+		os.Exit(1)
+	}
+
 	// Print the ASCII banner
 	internal.PrintBanner()
 
@@ -25,7 +38,11 @@ func main() {
 	go func() {
 		<-c
 		fmt.Println()
-		internal.SimpleLogger.Print("CTRL+C detected, Force stopping the test")
+		if internal.SimpleLogger != nil {
+			internal.SimpleLogger.Print("CTRL+C detected, Force stopping the test")
+		} else {
+			fmt.Println("CTRL+C detected, Force stopping the test")
+		}
 		fmt.Println()
 		if internal.WsListener != nil && internal.WsListener.Listening {
 			internal.WsListener.Stop()
@@ -41,8 +58,10 @@ func main() {
 	}
 	internal.TestID = hex.EncodeToString(randomBytes)
 
-	// Set up logger, read config, verify key, etc.
+	// Set up logger FIRST, before any config operations
 	internal.SetupLogger()
+
+	// Now read config and perform other initialization
 	internal.GlobalConfig = internal.ReadConfig()
 	internal.VerifyPrivateKey(internal.GlobalConfig.PrivateKey)
 
@@ -81,6 +100,7 @@ func main() {
 	internal.SimpleLogger.Printf("%s %d", green("Node Retries           :"), internal.GlobalConfig.NodeRetries)
 	internal.SimpleLogger.Printf("")
 	internal.SimpleLogger.Printf("Initializing...")
+
 	// Ensure we have enough SOL for creating ATAs, paying fees, etc.
 	internal.AssertSufficientBalance()
 
@@ -95,7 +115,6 @@ func main() {
 	internal.Wg.Wait()
 
 	// Summarize final stats
-
 	internal.SimpleLogger.Printf("%s %s", green("Finished Test ID       :"), internal.TestID)
 	internal.SimpleLogger.Printf("%s %s", green("Test Wallet            :"), internal.TestAccount.PublicKey().String())
 	internal.SimpleLogger.Printf("%s %s", green("RPC URL                :"), internal.GlobalConfig.RpcUrl)
