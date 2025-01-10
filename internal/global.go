@@ -17,7 +17,7 @@ var (
 	SOLMint = solana.MustPublicKeyFromBase58("So11111111111111111111111111111111111111112")
 )
 
-var Version = "1.0.0"
+var Version = "1.0.1"
 
 var (
 	// Default config can be used if config.json doesn't exist
