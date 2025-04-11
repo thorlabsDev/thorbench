@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/gagliardetto/solana-go"
 	"github.com/gagliardetto/solana-go/rpc"
@@ -27,20 +28,23 @@ type Config struct {
 	Amount           float64 `json:"amount"`
 	ComputeUnitLimit uint64  `json:"compute_unit_limit"`
 	SkipWarmup       bool    `json:"skip_warmup"`
+	Debug            bool    `json:"debug"`
 }
 
 func (c *Config) GetWsUrl() string {
 	if c.WsUrl != "" {
-		return c.WsUrl
+		return strings.TrimSuffix(c.WsUrl, "/")
 	}
-	return strings.ReplaceAll(strings.ReplaceAll(c.RpcUrl, "http://", "ws://"), "https://", "wss://")
+	// Derive from RPC URL if not provided.
+	url := strings.ReplaceAll(strings.ReplaceAll(c.RpcUrl, "http://", "ws://"), "https://", "wss://")
+	return strings.TrimSuffix(url, "/")
 }
 
 func (c *Config) GetSendUrl() string {
 	if c.SendRpcUrl != "" {
-		return c.SendRpcUrl
+		return strings.TrimSuffix(c.SendRpcUrl, "/")
 	}
-	return c.RpcUrl
+	return strings.TrimSuffix(c.RpcUrl, "/")
 }
 
 func getExecutablePath() string {
@@ -50,7 +54,6 @@ func getExecutablePath() string {
 		return "."
 	}
 	dir := filepath.Dir(ex)
-	// SimpleLogger.Printf("Executable directory: %s", dir)
 	return dir
 }
 
@@ -59,11 +62,9 @@ func findConfigFile() (string, error) {
 
 	// Always try executable directory first
 	configPath := filepath.Join(execDir, "config.json")
-	// SimpleLogger.Printf("Checking for config at: %s", configPath)
 
 	if _, err := os.Stat(configPath); err == nil {
 		if data, err := os.ReadFile(configPath); err == nil && len(data) > 0 {
-			// SimpleLogger.Printf("Successfully read %d bytes from config in executable directory", len(data))
 			return configPath, nil
 		} else {
 			SimpleLogger.Printf("Warning: Found config in executable directory but couldn't read it: %v", err)
@@ -76,10 +77,8 @@ func findConfigFile() (string, error) {
 		SimpleLogger.Printf("Warning: Could not determine current working directory: %v", err)
 		cwd = "."
 	}
-	// SimpleLogger.Printf("Current working directory: %s", cwd)
 
 	configPath = filepath.Join(cwd, "config.json")
-	// SimpleLogger.Printf("Checking for config at: %s", configPath)
 
 	if _, err := os.Stat(configPath); err == nil {
 		if data, err := os.ReadFile(configPath); err == nil && len(data) > 0 {
@@ -94,8 +93,6 @@ func findConfigFile() (string, error) {
 }
 
 func ReadConfig() *Config {
-	// SimpleLogger.Printf("Looking for config.json...")
-
 	configPath, err := findConfigFile()
 	if err != nil {
 		SimpleLogger.Printf("No existing config file found, creating template...")
@@ -111,9 +108,6 @@ func ReadConfig() *Config {
 	if err != nil {
 		SimpleLogger.Fatalf("Error reading config file at %s: %v", configPath, err)
 	}
-
-	// SimpleLogger.Printf("Read config file contents (%d bytes)", len(data))
-	// SimpleLogger.Printf("Config content preview: %s", string(data[:min(len(data), 100)]))
 
 	var cfg Config
 	if err := json.Unmarshal(data, &cfg); err != nil {
@@ -167,22 +161,6 @@ func WriteConfig(config *Config) error {
 	return os.WriteFile(configPath, data, 0644)
 }
 
-// Helper function to mask private key in logs
-func maskPrivateKey(key string) string {
-	if len(key) <= 8 {
-		return "***"
-	}
-	return key[:4] + "..." + key[len(key)-4:]
-}
-
-// Helper function for min of two ints
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
-}
-
 func VerifyPrivateKey(base58key string) {
 	account, err := solana.PrivateKeyFromBase58(base58key)
 	if err != nil {
@@ -192,15 +170,36 @@ func VerifyPrivateKey(base58key string) {
 }
 
 func AssertSufficientBalance() {
-	rpcClient := rpc.New(GlobalConfig.RpcUrl)
-	balance, err := rpcClient.GetBalance(context.TODO(), TestAccount.PublicKey(), rpc.CommitmentFinalized)
+	rpcClient := InitializeRPCClient(GlobalConfig.RpcUrl)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	var balance *rpc.GetBalanceResult
+	var err error
+
+	for retries := 0; retries < 3; retries++ {
+		balance, err = rpcClient.GetBalance(ctx, TestAccount.PublicKey(), rpc.CommitmentFinalized)
+		if err == nil && balance != nil && balance.Value > 0 {
+			break
+		}
+		if ctx.Err() != nil {
+			SimpleLogger.Fatalf("timeout getting test wallet balance after %d retries: %v", retries, err)
+		}
+		time.Sleep(time.Second * time.Duration(retries+1))
+	}
+
 	if err != nil || balance == nil {
-		SimpleLogger.Fatalf("error getting test wallet balance: %v", err)
+		SimpleLogger.Fatalf("error getting test wallet balance after retries: %v", err)
+	}
+
+	if balance.Value <= 0 {
+		SimpleLogger.Fatal("received invalid zero or negative balance from RPC")
 	}
 
 	costPerTx := uint64(GlobalConfig.PrioFee*float64(GlobalConfig.ComputeUnitLimit)) + 5000
 	totalCost := GlobalConfig.TxCount * costPerTx
-	if balance.Value < totalCost/2 {
+	if uint64(balance.Value) < totalCost/2 {
 		SimpleLogger.Fatal(
 			"Insufficient balance in test wallet.",
 			"balance", fmt.Sprintf("%.6f SOL", float64(balance.Value)/1_000_000_000),

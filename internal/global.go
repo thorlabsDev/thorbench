@@ -17,7 +17,7 @@ var (
 	SOLMint = solana.MustPublicKeyFromBase58("So11111111111111111111111111111111111111112")
 )
 
-var Version = "1.0.1"
+var Version = "1.1.0"
 
 var (
 	// Default config can be used if config.json doesn't exist
@@ -33,8 +33,16 @@ var (
 		Slippage:         100.0,
 		Amount:           0.001,
 		SkipWarmup:       false,
+		Debug:            false,
 	}
 )
+
+// BlockHeightRecord stores a block height with its timestamp
+type BlockHeightRecord struct {
+	Height    uint64
+	Timestamp time.Time
+	TxSig     solana.Signature // Associated transaction signature
+}
 
 // Global variables
 var (
@@ -47,8 +55,11 @@ var (
 	SlippageFailures      uint64
 	OtherFailures         uint64
 
-	TxTimes  = make(map[solana.Signature]time.Time)
-	TxBlocks = make(map[uint64]uint64)
+	TxTimes            = make(map[solana.Signature]time.Time)
+	TxBlocks           = make(map[uint64]uint64)
+	BlockTimes         = make(map[uint64]time.Time)
+	BlockHeightHistory = make([]BlockHeightRecord, 0, 1000) // Store block heights with timestamps
+	TxLandBlockHeights = make(map[solana.Signature]uint64)
 
 	TestID      string
 	LogFileName = "benchmark.log"
@@ -66,3 +77,10 @@ var (
 	// The time we will force-stop listening
 	StopTime time.Time
 )
+
+// DebugLog prints a message only when debug mode is enabled
+func DebugLog(format string, args ...interface{}) {
+	if GlobalConfig != nil && GlobalConfig.Debug {
+		SimpleLogger.Printf(format, args...)
+	}
+}

@@ -1,6 +1,6 @@
 # Solana RPC Benchmark Tool
 
-A benchmarking tool for Solana RPC nodes using Raydium swaps. While simple SOL transfers only use about 200-5000 compute units (CU), this tool performs Raydium swaps that use ~30,000 CU to better simulate real-world RPC node performance under load.
+A comprehensive benchmarking tool for Solana RPC nodes using Raydium swaps. While simple SOL transfers only use about 200-5000 compute units (CU), this tool performs Raydium swaps that use ~30,000 CU to better simulate real-world RPC node performance under load.
 
 ## Why This Tool?
 
@@ -21,12 +21,17 @@ A benchmarking tool for Solana RPC nodes using Raydium swaps. While simple SOL t
   - Transaction success rates
   - Landing time distribution
   - Block distribution analysis
+  - Block height differential tracking
+  - Block time estimation
+  - Correlation between block times and confirmation times
 
 ### Real-World Simulation
 - Tests node performance under DeFi-like load
 - Verifies WebSocket notification reliability
 - Measures transaction finality times
 - Identifies potential bottlenecks
+- Advanced RPC error tracking and analytics
+- Detailed HTTP response statistics
 
 ## ⚠️ Important Warnings
 
@@ -52,7 +57,7 @@ This tool executes real swaps on Raydium with real funds:
 
 Requires Go 1.20 or higher:
 ```bash
-git clone https://github.com/your-repo/thorbench.git
+git clone https://github.com/thorlabsDev/thorbench.git
 cd thorbench
 go mod tidy
 go build
@@ -64,22 +69,39 @@ The tool creates a `config.json` template on first run:
 
 ```json
 {
-  "private_key": "<YOUR-BASE58-PRIVATE-KEY>",
-  "rpc_url": "https://api.mainnet-beta.solana.com",
+  "private_key": "YOUR-BASE58-PRIVATE-KEY",
+  "rpc_url": "http://rpc-de.thornode.io/",
   "ws_url": "",  // Optional: WebSocket URL
   "send_rpc_url": "",  // Optional: Separate RPC for sending
   "rate_limit": 200,
-  "tx_count": 100,
+  "tx_count": 20,
   "prio_fee": 1.0,
-  "node_retries": 3,
+  "node_retries": 0,
   "input_mint": "So11111111111111111111111111111111111111112",  // SOL
-  "output_mint": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",  // USDC
+  "output_mint": "4k3Dyjzvzp8eMZWUXbBCjEvwSkkk59S5iCNLY3QrkX6R",  // RAY
   "slippage": 100.0,  // Use 100% for testing
-  "amount": 0.1,  // Amount per swap
+  "amount": 0.001,  // Amount per swap
   "compute_unit_limit": 30000,  // Optional: defaults to 30000
-  "skip_warmup": false  // Optional: whether to skip warmup transaction
+  "skip_warmup": false,  // Optional: whether to skip warmup transaction
+  "debug": false  // Optional: enable detailed debug mode
 }
 ```
+
+### New Features and Settings
+
+#### Debug Mode
+The new `debug` setting enables comprehensive diagnostic information:
+- Detailed HTTP request/response logging
+- WebSocket message tracking
+- Endpoint performance statistics
+- Error type distribution analysis
+- Connection retry details
+
+#### Enhanced Connection Management
+- Automatic WebSocket reconnection with exponential backoff and jitter
+- Improved error handling with detailed diagnostics
+- Robust RPC connection with automatic retries
+- Connection quality monitoring
 
 ### Warmup Transaction
 
@@ -140,6 +162,7 @@ The tool outputs:
 - Landing time statistics
 - Block distribution analysis
 - Timing statistics (min/max/avg/median/percentiles)
+- Block height difference analysis
 - Logs in `thor_bench_<timestamp>_<testid>.log`
 
 ## Output Analysis
@@ -163,10 +186,28 @@ The benchmark provides detailed statistics:
 - Median time
 - 90th/95th/99th percentiles
 
+### Block Statistics (New!)
+- Block height differences
+- Block confirmation times
+- Block/time correlation analysis
+- Observed block timing statistics
+- Minimum, maximum, average, and median block differences
+- Estimated confirmation times based on block differentials
+- Correlation between block height and actual confirmation time
+
 ### Block Distribution
 - Transactions per block
 - Block spacing analysis
 - Landing time distribution
+- Block time tracking
+
+### HTTP Debug Statistics (When in Debug Mode)
+- Total requests and status code distribution
+- Latency statistics (min/max/avg)
+- Endpoint-specific performance metrics
+- Error type distribution
+- Rate limit hit analysis
+- Recent error details with timestamps
 
 ## Troubleshooting
 
@@ -186,6 +227,13 @@ The benchmark provides detailed statistics:
 - Increase retries
 - Check WebSocket connection
 
+### Connection Issues
+- Enable debug mode to identify problems
+- Check rate limit policies
+- Review HTTP error patterns
+- Verify URL configurations
+- Check if endpoints are trimmed correctly
+
 ## Best Practices
 
 1. Test with minimal amounts first
@@ -195,6 +243,9 @@ The benchmark provides detailed statistics:
 5. Never share private keys
 6. Start with warmup enabled
 7. Monitor resource usage
+8. Enable debug mode for detailed diagnostics when needed
+9. Review log files for error patterns
+10. Check block heights correlation for deeper performance insights
 
 ## License
 Apache License 2.0 - See LICENSE file for details.

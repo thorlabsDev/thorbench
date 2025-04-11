@@ -6,6 +6,7 @@ import (
 	"github.com/fatih/color"
 	"github.com/gagliardetto/solana-go"
 	"github.com/gagliardetto/solana-go/rpc"
+	"time"
 )
 
 // compiledToInstructions re-constructs a list of solana.Instruction
@@ -83,7 +84,7 @@ func PrintBanner() {
 
 // FetchDecimalsForMint fetches the "decimals" byte from an SPL Token mint account.
 func FetchDecimalsForMint(rpcClient *rpc.Client, mintPubkey solana.PublicKey) (uint8, error) {
-	acct, err := rpcClient.GetAccountInfo(context.TODO(), mintPubkey)
+	acct, err := rpcClient.GetAccountInfo(context.Background(), mintPubkey)
 	if err != nil {
 		return 0, fmt.Errorf("error getting mint account for %s: %v", mintPubkey, err)
 	}
@@ -91,7 +92,6 @@ func FetchDecimalsForMint(rpcClient *rpc.Client, mintPubkey solana.PublicKey) (u
 		return 0, fmt.Errorf("no account data for %s", mintPubkey)
 	}
 
-	// Convert to raw bytes:
 	dataBytes := acct.Value.Data.GetBinary()
 	if dataBytes == nil {
 		return 0, fmt.Errorf("account data is nil for %s", mintPubkey)
@@ -101,18 +101,13 @@ func FetchDecimalsForMint(rpcClient *rpc.Client, mintPubkey solana.PublicKey) (u
 		return 0, fmt.Errorf("invalid mint account size for %s", mintPubkey)
 	}
 
-	decimals := dataBytes[44]
-	return decimals, nil
+	return dataBytes[44], nil
 }
 
 func createCleanMemo(format string, args ...any) []byte {
-	// Create the formatted string
 	memo := fmt.Sprintf(format, args...)
-
-	// Convert to bytes, being careful to only include printable ASCII
 	cleanBytes := make([]byte, 0, len(memo))
 	for _, b := range []byte(memo) {
-		// Only include printable ASCII characters (32-126)
 		if b >= 32 && b <= 126 {
 			cleanBytes = append(cleanBytes, b)
 		}
@@ -133,4 +128,17 @@ func createRawMemoInstruction(data []byte, signer solana.PublicKey) solana.Instr
 		},
 		data,
 	)
+}
+
+// calculateBlockTime estimates time based on block height difference
+func calculateBlockTime(blockDiff uint64) time.Duration {
+	// Solana's target block time is around 400ms
+	const avgBlockTimeMs = 400
+
+	if blockDiff == 0 {
+		return 0
+	}
+
+	timeMs := float64(blockDiff) * avgBlockTimeMs
+	return time.Duration(timeMs) * time.Millisecond
 }

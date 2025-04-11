@@ -40,6 +40,7 @@ func main() {
 		fmt.Println()
 		if internal.SimpleLogger != nil {
 			internal.SimpleLogger.Print("CTRL+C detected, Force stopping the test")
+			internal.FlushLogs() // Make sure we flush logs
 		} else {
 			fmt.Println("CTRL+C detected, Force stopping the test")
 		}
@@ -47,6 +48,7 @@ func main() {
 		if internal.WsListener != nil && internal.WsListener.Listening {
 			internal.WsListener.Stop()
 		} else {
+			internal.CleanupLogger() // Make sure we properly close log files
 			os.Exit(0)
 		}
 	}()
@@ -61,9 +63,16 @@ func main() {
 	// Set up logger FIRST, before any config operations
 	internal.SetupLogger()
 
+	// Ensure we cleanup logs at exit
+	defer internal.CleanupLogger()
+
 	// Now read config and perform other initialization
 	internal.GlobalConfig = internal.ReadConfig()
+
+	// Validate and verify private key
+	fmt.Println("Verifying private key...")
 	internal.VerifyPrivateKey(internal.GlobalConfig.PrivateKey)
+	fmt.Println("Private key verified successfully")
 
 	// Configure the rate limiter
 	internal.Limiter.SetLimit(rate.Limit(internal.GlobalConfig.RateLimit))
@@ -86,6 +95,7 @@ func main() {
 	internal.SimpleLogger.Printf("%s %.1f", green("Slippage               :"), internal.GlobalConfig.Slippage)
 	internal.SimpleLogger.Printf("%s %.4f", green("Token Swap Amount      :"), internal.GlobalConfig.Amount)
 	internal.SimpleLogger.Printf("%s %d", green("Compute Unit Limit     :"), internal.GlobalConfig.ComputeUnitLimit)
+	internal.SimpleLogger.Printf("%s %v", green("Debug Mode             :"), internal.GlobalConfig.Debug)
 
 	// Show user the Priority Fee in SOL terms
 	lamportsPerCU := internal.GlobalConfig.PrioFee
@@ -100,15 +110,31 @@ func main() {
 	internal.SimpleLogger.Printf("%s %d", green("Node Retries           :"), internal.GlobalConfig.NodeRetries)
 	internal.SimpleLogger.Printf("")
 	internal.SimpleLogger.Printf("Initializing...")
+	internal.FlushLogs() // Force flush logs here
 
 	// Ensure we have enough SOL for creating ATAs, paying fees, etc.
+	internal.SimpleLogger.Printf("Checking wallet balance...")
 	internal.AssertSufficientBalance()
+	internal.SimpleLogger.Printf("Balance check passed")
+	internal.FlushLogs()
+
+	// Add timeout protection for the entire program
+	programTimeout := time.AfterFunc(5*time.Minute, func() {
+		internal.SimpleLogger.Printf("EMERGENCY TIMEOUT: Program has been running for 5 minutes without completing")
+		internal.SimpleLogger.Printf("This is likely due to a deadlock or infinite loop")
+		internal.SimpleLogger.Printf("Current state: SentTx=%d, Processed=%d, Slippage=%d, Other=%d",
+			internal.SentTransactions, internal.ProcessedTransactions,
+			internal.SlippageFailures, internal.OtherFailures)
+
+		internal.FlushLogs()
+		os.Exit(1)
+	})
+	defer programTimeout.Stop()
 
 	// Start the websocket listener
 	internal.Wg.Add(1)
 	internal.WsListener = new(internal.WebsocketListener)
-	// Force stop in 1 minute
-	internal.StopTime = time.Now().Add(1 * time.Minute)
+
 	go internal.WsListener.Start()
 
 	// Wait until the listener finishes (or is force-stopped)
@@ -126,7 +152,6 @@ func main() {
 	internal.SimpleLogger.Printf("%s %.4f", green("Token Swap Amount      :"), internal.GlobalConfig.Amount)
 	internal.SimpleLogger.Printf("%s %d", green("Compute Unit Limit     :"), internal.GlobalConfig.ComputeUnitLimit)
 
-	// Recompute the fee (same as before) for final display
 	finalCUCostSOL := (lamportsPerCU*float64(internal.GlobalConfig.ComputeUnitLimit) + 5000) / 1_000_000_000.0
 	internal.SimpleLogger.Printf("%s %f Lamports (%.9f SOL)",
 		green("Priority Fee/CU        :"),
@@ -135,13 +160,23 @@ func main() {
 	)
 	internal.SimpleLogger.Printf("%s %d", green("Node Retries           :"), internal.GlobalConfig.NodeRetries)
 
-	// Print transaction stats if any were actually sent
 	if internal.SentTransactions > 0 {
 		internal.PrintStatsAndBlocks()
 	}
 
+	if internal.GlobalConfig.Debug {
+		internal.DebugStats.PrintStats()
+	}
+
 	fmt.Println()
 	fmt.Printf("Benchmark results saved to %s\n", internal.LogFileName)
+
+	// Force flush logs one last time
+	internal.FlushLogs()
+
 	fmt.Println("Press 'Enter' to exit...")
 	fmt.Scanln()
+
+	// Cleanup logs on exit
+	internal.CleanupLogger()
 }
