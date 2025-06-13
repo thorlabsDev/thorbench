@@ -60,6 +60,7 @@ Requires Go 1.20 or higher:
 git clone https://github.com/thorlabsDev/thorbench.git
 cd thorbench
 go mod tidy
+cd cmd
 go build
 ```
 
